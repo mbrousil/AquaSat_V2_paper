@@ -18,6 +18,8 @@ use_virtualenv("./.venv", required = TRUE)
 
 ## 1. Workflow/Data Architecture Diagram
 
+Uses Python {diagrams} library
+
 ```{python, results = "hide"}
 from diagrams import Diagram, Cluster, Edge
 from diagrams.generic.compute import Rack
@@ -58,7 +60,8 @@ with Diagram("AquaSat V2 Data Architecture", filename="figs/aquasat_ecosystem", 
         landsat = Custom("TM, ETM+, OLI, TIRS\nStarts 1984", "../resources/uxwing/satellite-icon.png")
         
     with Cluster("Google Earth Engine & R Pipelines"):
-        gee_data = Storage("Data: SR & ST")
+        gee_data = Custom("Data: SR & ST",
+        "../resources/uxwing/database-download-icon.png")
         gee_cal = Custom("Intermission Calibration",
         "../resources/uxwing/control-panel-icon.png")
         # CUSTOM ICON: Filter Settings
