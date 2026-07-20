@@ -26,7 +26,7 @@ from diagrams.generic.compute import Rack
 from diagrams.generic.storage import Storage
 from diagrams.custom import Custom
 
-# Defaults
+# Default formatting for clusters
 cluster_styles = {
     "labeljust": "c",
     "fontname": "Helvetica-Bold",
@@ -34,95 +34,116 @@ cluster_styles = {
 }
 
 # Define the diagram properties (Left-to-Right layout)
-with Diagram("<<b>AquaSat V2 Data Architecture</b>>", filename="figs/aquasat_ecosystem", show=False, direction="LR",
-graph_attr={"fontsize": "24"}):
+with Diagram(
+    "<<b>AquaSat V2 Data Architecture</b>>", 
+    filename="figs/aquasat_ecosystem", 
+    show=False, 
+    direction="LR",
+    graph_attr={"fontsize": "24"}
+):
 
+    # -------------------------------------------------
+    # In-Situ Pipeline
+    # -------------------------------------------------
+
+    # WQP source input
     wqp_data = Custom("WQP Data\n(NWIS & WQX)", "../resources/uxwing/database-db-icon.png")
         
-    # This node uses an invisible Cluster to force more white space and prevent
-    # text overlaps
+    # WQP download process
+    # This node uses an invisible Cluster to force more white space and prevent text overlaps
     with Cluster("", graph_attr={"style": "invis", "margin": "80.0"}):
-      download = Custom("AquaMatch_download_WQP\nSystematic Retrieval",
-      "../resources/uxwing/database-download-icon.png")
+        download = Custom("AquaMatch_download_WQP\nSystematic Retrieval", "../resources/uxwing/database-download-icon.png")
    
-   
-   
-    # with Cluster("AquaMatch_harmonize_WQP\nMulti-step Harmonization",
+    # In-situ harmonization process
     with Cluster("<<b>AquaMatch_harmonize_WQP</b><br/>Multi-step Harmonization>",
-    graph_attr={"labeljust": "c", "fontname": "Helvetica", "fontsize": "14",
-    "margin": "30,0"}):
-        harmonization = Custom("  Rigorous Harmonization  \n(SME Input)",
-        "../resources/uxwing/filter-setting-icon.png")
-        aggregation = Custom("Aggregation Routine",
-        "../resources/uxwing/consolidation-arrow-icon_point_right.png")
+        graph_attr={"labeljust": "c", "fontname": "Helvetica", "fontsize": "14", "margin": "30,0"}):
         
-    harmonized_db = Custom("Harmonized\nIn-Situ Data", "../resources/uxwing/table-edit-icon.png")
+        harmonization = Custom("  Rigorous Harmonization  \n(SME Input)", "../resources/uxwing/filter-setting-icon.png")
+        aggregation = Custom("Aggregation Routine", "../resources/uxwing/consolidation-arrow-icon_point_right.png")
+    
+    # Harmonized WQP data
+    harmonized_output = Custom("Harmonized\nIn-Situ Data", "../resources/uxwing/table-edit-icon.png")
     
     # Flow for Top Pipeline
-    wqp_data >> download >> harmonization >> aggregation >> harmonized_db
+    wqp_data >> download >> harmonization >> aggregation >> harmonized_output
+
 
     # -------------------------------------------------
-    # Bottom Pipeline: Remote Sensing Data
+    # Remote Sensing Pipeline
     # -------------------------------------------------
+    
+    # Landsat source input
     landsat = Custom("Landsat Collection 2\nTM, ETM+, OLI, TIRS", "../resources/uxwing/satellite-icon.png")
         
-    with Cluster("Google Earth Engine & R Pipelines",
-    graph_attr=cluster_styles):
-        gee_data = Custom("Data: SR & ST",
-        "../resources/uxwing/database-download-icon.png")
-        gee_cal = Custom("Intermission Calibration",
-        "../resources/uxwing/control-panel-icon.png")
-        # CUSTOM ICON: Filter Settings
+    # GEE / R processes
+    with Cluster("Google Earth Engine & R Pipelines", graph_attr=cluster_styles):
+        gee_data = Custom("Data: SR & ST", "../resources/uxwing/database-download-icon.png")
+        gee_cal = Custom("Intermission Calibration", "../resources/uxwing/control-panel-icon.png")
         gee_qual = Custom("Quality Filters", "../resources/uxwing/filter-setting-icon.png")
         
     # Flow for GEE preprocessing
     landsat >> gee_data >> gee_cal >> gee_qual
 
-    # The 3 parallel spatial resolution stacks
-    with Cluster("<<b>AquaSat Stacks</b>>", graph_attr={"labeljust": "c",
+    # SR stacks
+    with Cluster("<<b>SR Stacks</b>>", graph_attr={"labeljust": "c",
     "fontname":"Helvetica", "fontsize": "14", "margin": "25,0"}):
-        site_sr = Custom("AquaMatch_siteSR\nSample Site Stacks",
-        "../resources/uxwing/layer-icon.png")
-        lake_sr = Custom("AquaMatch_lakeSR\nLentic Waterbody Stacks",
-        "../resources/uxwing/layer-icon.png")
-        river_sr = Custom("riverSR\nLotic Waterbody Stacks",
-        "../resources/uxwing/layer-icon.png")
         
-    # CUSTOM ICONS: Site, Lake, and River Data Product Tables
-    site_db = Custom("siteSR\nData Product", "../resources/uxwing/table-edit-icon.png")
-    lake_db = Custom("lakeSR\nData Product", "../resources/uxwing/table-edit-icon.png")
-    river_db = Custom("riverSR\nData Product", "../resources/uxwing/table-edit-icon.png")
+        # siteSR
+        with Cluster("<<b>AquaMatch_siteSR</b><br/>Sample Site Stacks>",
+        graph_attr={"labeljust": "c", "fontname":"Helvetica", "fontsize": "14", "margin": "35,0"}):
+            site_sr = Custom("Processing:\n200m spatial buffer around\n WQP sites. 30m road/bridge\n buffer for pixel filtering",
+            "../resources/uxwing/layer-icon.png")
+            
+        # lakeSR
+        with Cluster("<<b>AquaMatch_lakeSR</b><br/>Lentic Waterbody Stacks>",
+        graph_attr={"labeljust": "c", "fontname":"Helvetica", "fontsize": "14", "margin": "35,0"}):
+            lake_sr = Custom("Lakes > 1 hectare;\n extracts from centrally\n located point",
+            "../resources/uxwing/layer-icon.png")
+            
+        # riverSR
+        with Cluster("<<b>riverSR</b><br/>Lotic Waterbody Stacks>",
+        graph_attr={"labeljust": "c", "fontname":"Helvetica", "fontsize": "14", "margin": "35,0"}):
+            river_sr = Custom("Rivers > 60m average width;\n sliced into 1.2-1.6km\n median reaches",
+            "../resources/uxwing/layer-icon.png")
+            
+            
+    site_sr_product = Custom("siteSR\nData Product", "../resources/uxwing/table-edit-icon.png")
+    lake_sr_product = Custom("lakeSR\nData Product", "../resources/uxwing/table-edit-icon.png")
+    river_sr_product = Custom("riverSR\nData Product", "../resources/uxwing/table-edit-icon.png")
 
-    # Connect GEE output to the three stacks, and stacks to their databases
-    gee_qual >> site_sr >> site_db
-    gee_qual >> lake_sr >> lake_db
-    gee_qual >> river_sr >> river_db
+    # Connect GEE output to the three stacks, and stacks to their datasets
+    gee_qual >> site_sr >> site_sr_product
+    gee_qual >> lake_sr >> lake_sr_product
+    gee_qual >> river_sr >> river_sr_product
 
     # -------------------------------------------------
-    # Final Stage: Matchups & Modeling
+    # Matchups & Modeling
     # -------------------------------------------------
+    
+    # Matchup process
     with Cluster("Core Pairing Engine", graph_attr=cluster_styles):
-        # CUSTOM ICON: Coding/Pairing Engine
         matchups = Custom("AquaMatchr\nR Package", "../resources/uxwing/compare-match-icon.png")
         
+    # Completed matchups
     ready_data = Storage("Analysis-Ready\nMatchup Datasets")
     
-    # This node represents the tall vertical red bar in the image
-    analysis = Custom("Analysis and\nModeling",
-    "../resources/uxwing/diagnostic-pulse-icon.png")
+    # Analysis
+    with Cluster("Analysis and\nModeling", graph_attr=cluster_styles):
+        analysis = Custom("", "../resources/uxwing/diagnostic-pulse-icon.png")
     
+    # Finalized products
     final_product = Custom("Remote Sensing\nQuality Modeling\n& Products", "../resources/uxwing/data-science-icon.png")
 
-    # Connect the harmonized DB and the siteSR DB into the matchup engine
-    harmonized_db >> matchups
-    site_db >> matchups
+    # Connect WQP & siteSR to matchups
+    harmonized_output >> matchups
+    site_sr_product >> matchups
     
     # Connect matchups out to modeling
     matchups >> ready_data >> analysis >> final_product
     
     # Connect the remaining data products directly to analysis
-    lake_db >> analysis
-    river_db >> analysis
+    lake_sr_product >> analysis
+    river_sr_product >> analysis
 ```
 
 ```{r}
