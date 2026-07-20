@@ -153,7 +153,7 @@ knitr::include_graphics("figs/aquasat_ecosystem.png")
 
 <br>
 
-## Hex maps of observation density for each parameter
+## 2a. Hex maps of observation density for each parameter
 
 Exports to `figs/parameter_counts_map.pdf`.
 
@@ -299,19 +299,56 @@ map_plot
 ggsave(filename = "figs/parameter_counts_map.pdf", plot = map_plot,
        width = 7.5, height = 5.0, units = "in")
 
+rm(conterminous_us, conterminous_recs_sf, epsg_codes, non_conterminous_us,
+   stacked_sf_data, map_plot)
+gc()
 ```
 
+## 2b. Concentration distributions for each parameter 
+
+Note: Uses psuedo-log x-axis transformation to handle 0s. Exports to `figs/parameter_distributions.pdf`.
+
+```{r}
+# Stack records
+stacked_param_data <- map2(
+  .x = param_data_list,
+  .y = names(param_data_list),
+  .f = \(x, y) x %>%
+    # Add umbrella parameter, bc some datasets like "tss" have more than one
+    # value in the parameter column (e.g., tss, ssc)
+    mutate(main_param = y,
+           # Use the more fine scale parameter col + unit for distribution labels
+           param_label = paste0(parameter, " (", harmonized_units, ")"))
+  ) %>%
+  bind_rows()
+
+param_distribution_plot <- stacked_param_data %>%
+  ggplot() +
+  geom_histogram(aes(harmonized_value)) +
+  facet_wrap(vars(param_label), scales = "free", ncol = 2) +
+  scale_x_continuous(trans = "pseudo_log",
+                     breaks = c(0, 10^(0:5))) + 
+  ggtitle(label = "Distribution of harmonized values") +
+  xlab("Depth or Concentration") +
+  ylab("Count") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Return to view
+param_distribution_plot
+
+# Export as .pdf
+ggsave(filename = "figs/parameter_distributions.pdf", plot = param_distribution_plot,
+       width = 7.5, height = 5.0, units = "in")
+```
+
+
+## 3.
 
 ```{r}
 
 ```
-
-
-
-
-
-
-
 
 
 
