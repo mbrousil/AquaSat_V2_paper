@@ -160,6 +160,7 @@ Exports to `figs/parameter_counts_map.pdf`.
 ```{r}
 library(tidyverse)
 library(AquaMatchr)
+library(arrow)
 library(scales)
 library(sf)
 library(sfheaders)
@@ -341,13 +342,38 @@ param_distribution_plot
 # Export as .pdf
 ggsave(filename = "figs/parameter_distributions.pdf", plot = param_distribution_plot,
        width = 7.5, height = 5.0, units = "in")
+
+# Now export the WQP data locally for matchups and to free up memory
+iwalk(
+  .x = param_data_list,
+  .f = \(data, name) write_feather(
+  x = data, 
+  sink = file.path("data", paste0(name, "_harmonized.feather"))
+))
+
+rm(param_data_list, stacked_param_data, param_distribution_plot)
+gc()
 ```
 
 
-## 3.
+## 3. SR maps
 
 ```{r}
+siteSR_paths <- download_siteSR(
+  save_location = "data",
+  # DSWE1
+  algal_mask = FALSE,
+  ask = TRUE
+)
 
+lakeSR_paths <- download_lakeSR(
+  save_location = "data",
+  # DSWE1
+  algal_mask = FALSE,
+  ask = TRUE
+)
+
+riverSR_paths <- download_riverSR(save_location = "data")
 ```
 
 

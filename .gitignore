@@ -48,3 +48,8 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 .DS_Store
+
+# Data files
+/data/**/*.csv
+/data/**/*.feather
+/data/**/*.arrow
