@@ -24,42 +24,50 @@ Uses Python {diagrams} library
 from diagrams import Diagram, Cluster, Edge
 from diagrams.generic.compute import Rack
 from diagrams.generic.storage import Storage
-# IMPORTED: Custom class allows loading local PNG assets
 from diagrams.custom import Custom
 
-# Define the diagram properties (Left-to-Right layout)
-with Diagram("AquaSat V2 Data Architecture", filename="figs/aquasat_ecosystem", show=False, direction="LR"):
+# Defaults
+cluster_styles = {
+    "labeljust": "c",
+    "fontname": "Helvetica-Bold",
+    "fontsize": "14"
+}
 
-    # -------------------------------------------------
-    # Top Pipeline: WQP In-Situ Data
-    # -------------------------------------------------
-    with Cluster("WQP Data Sources"):
-        # CUSTOM ICON: Download Database
-        wqp_data = Custom("WQP Data\n(NWIS & WQP)", "../resources/uxwing/database-db-icon.png")
+# Define the diagram properties (Left-to-Right layout)
+with Diagram("<<b>AquaSat V2 Data Architecture</b>>", filename="figs/aquasat_ecosystem", show=False, direction="LR",
+graph_attr={"fontsize": "24"}):
+
+    wqp_data = Custom("WQP Data\n(NWIS & WQX)", "../resources/uxwing/database-db-icon.png")
         
-    download = Custom("AquaSat_download_WQP\nSystematic Retrieval",
-    "../resources/uxwing/database-download-icon.png")
-    
-    with Cluster("AquaSat_harmonize_WQP\nMulti-step Harmonization"):
-        harm_rigorous = Custom("Rigorous Harmonization\n(SME Input)",
+    # This node uses an invisible Cluster to force more white space and prevent
+    # text overlaps
+    with Cluster("", graph_attr={"style": "invis", "margin": "80.0"}):
+      download = Custom("AquaMatch_download_WQP\nSystematic Retrieval",
+      "../resources/uxwing/database-download-icon.png")
+   
+   
+   
+    # with Cluster("AquaMatch_harmonize_WQP\nMulti-step Harmonization",
+    with Cluster("<<b>AquaMatch_harmonize_WQP</b><br/>Multi-step Harmonization>",
+    graph_attr={"labeljust": "c", "fontname": "Helvetica", "fontsize": "14",
+    "margin": "30,0"}):
+        harmonization = Custom("  Rigorous Harmonization  \n(SME Input)",
         "../resources/uxwing/filter-setting-icon.png")
-        harm_agg = Custom("Aggregation Routine\nCollapse -> Single Value",
-        "../resources/uxwing/consolidation-arrow-icon.png")
+        aggregation = Custom("Aggregation Routine",
+        "../resources/uxwing/consolidation-arrow-icon_point_right.png")
         
-    # CUSTOM ICON: Harmonized In-Situ Data Table
     harmonized_db = Custom("Harmonized\nIn-Situ Data", "../resources/uxwing/table-edit-icon.png")
     
     # Flow for Top Pipeline
-    wqp_data >> download >> harm_rigorous >> harm_agg >> harmonized_db
+    wqp_data >> download >> harmonization >> aggregation >> harmonized_db
 
     # -------------------------------------------------
     # Bottom Pipeline: Remote Sensing Data
     # -------------------------------------------------
-    with Cluster("Landsat Collection 2"):
-        # CUSTOM ICON: Satellite
-        landsat = Custom("TM, ETM+, OLI, TIRS\nStarts 1984", "../resources/uxwing/satellite-icon.png")
+    landsat = Custom("Landsat Collection 2\nTM, ETM+, OLI, TIRS", "../resources/uxwing/satellite-icon.png")
         
-    with Cluster("Google Earth Engine & R Pipelines"):
+    with Cluster("Google Earth Engine & R Pipelines",
+    graph_attr=cluster_styles):
         gee_data = Custom("Data: SR & ST",
         "../resources/uxwing/database-download-icon.png")
         gee_cal = Custom("Intermission Calibration",
@@ -71,12 +79,13 @@ with Diagram("AquaSat V2 Data Architecture", filename="figs/aquasat_ecosystem", 
     landsat >> gee_data >> gee_cal >> gee_qual
 
     # The 3 parallel spatial resolution stacks
-    with Cluster("AquaSat Stacks"):
-        site_sr = Custom("AquaSat_siteSR\nIn-Situ Focused Stacks",
+    with Cluster("<<b>AquaSat Stacks</b>>", graph_attr={"labeljust": "c",
+    "fontname":"Helvetica", "fontsize": "14", "margin": "25,0"}):
+        site_sr = Custom("AquaMatch_siteSR\nSample Site Stacks",
         "../resources/uxwing/layer-icon.png")
-        lake_sr = Custom("AquaSat_lakeSR\nLentic Waterbody Stacks",
+        lake_sr = Custom("AquaMatch_lakeSR\nLentic Waterbody Stacks",
         "../resources/uxwing/layer-icon.png")
-        river_sr = Custom("AquaSat_riverSR\nLotic Waterbody Stacks",
+        river_sr = Custom("riverSR\nLotic Waterbody Stacks",
         "../resources/uxwing/layer-icon.png")
         
     # CUSTOM ICONS: Site, Lake, and River Data Product Tables
@@ -92,9 +101,9 @@ with Diagram("AquaSat V2 Data Architecture", filename="figs/aquasat_ecosystem", 
     # -------------------------------------------------
     # Final Stage: Matchups & Modeling
     # -------------------------------------------------
-    with Cluster("Core Pairing Engine"):
+    with Cluster("Core Pairing Engine", graph_attr=cluster_styles):
         # CUSTOM ICON: Coding/Pairing Engine
-        matchups = Custom("AquaSat_matchups\n[N=Millions+]", "../resources/uxwing/compare-match-icon.png")
+        matchups = Custom("AquaMatchr\nR Package", "../resources/uxwing/compare-match-icon.png")
         
     ready_data = Storage("Analysis-Ready\nMatchup Datasets")
     
