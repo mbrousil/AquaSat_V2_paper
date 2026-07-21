@@ -39,6 +39,7 @@ with Diagram(
     filename="figs/aquasat_ecosystem", 
     show=False, 
     direction="LR",
+    outformat="pdf",
     graph_attr={"fontsize": "24"}
 ):
 
@@ -300,7 +301,7 @@ map_plot
 ggsave(filename = "figs/parameter_counts_map.pdf", plot = map_plot,
        width = 7.5, height = 5.0, units = "in")
 
-rm(conterminous_us, conterminous_recs_sf, epsg_codes, non_conterminous_us,
+rm(conterminous_recs_sf, epsg_codes, non_conterminous_us,
    stacked_sf_data, map_plot)
 gc()
 ```
@@ -358,6 +359,7 @@ gc()
 
 ## 3. SR maps
 
+Download datasets:
 ```{r}
 siteSR_paths <- download_siteSR(
   save_location = "data",
@@ -376,6 +378,165 @@ lakeSR_paths <- download_lakeSR(
 riverSR_paths <- download_riverSR(save_location = "data")
 ```
 
+### siteSR
+Work with siteSR first. Exports to `figs/siteSR_counts_map.pdf`.
+```{r}
+full_siteSR <- build_sr(
+  which_sr = "siteSR",
+  # Location of downloaded files
+  sr_location = "data",
+  algal_mask = FALSE,
+  # Export as Arrow Table in data/
+  save = TRUE, 
+  # Defaults to data/siteSR_DSWE1_full_concatenation.feather
+  save_location = "data"
+)
+
+# Aggregate overpass counts
+avg_overpasses_siteSR <- full_siteSR %>%
+  mutate(year = year(date)) %>%
+  group_by(siteSR_id, year) %>%
+  summarize(annual_count = n(), .groups = "drop") %>%
+  group_by(siteSR_id) %>%
+  summarize(avg_overpasses_per_yr = mean(annual_count), .groups = "drop") %>%
+  collect()
+
+# Read in site data
+site_data <- read_csv("data/siteSR_collated_WQP_NWIS_sites_with_NHD_info_2025-06-04.csv")
+
+# Join aggregation to locations
+map_data_full_siteSR <- avg_overpasses_siteSR %>%
+  left_join(x = ., y = site_data, by = "siteSR_id") %>%
+  st_as_sf(coords = c("WGS84_Longitude", "WGS84_Latitude"), crs = 4326) %>%
+  st_transform(crs = map_crs) 
+
+# Subset to conterminous US
+map_data_siteSR <- map_data_full_siteSR[conterminous_us, ] %>%
+  mutate(
+    proj_x = st_coordinates(geometry)[,1],
+    proj_y = st_coordinates(geometry)[,2]
+  ) %>%
+  # Drop the spatial geometry list-column so it works cleanly with stat_summary_hex
+  st_drop_geometry()
+
+siteSR_count_map <- map_data_siteSR %>%
+  ggplot() +
+  geom_sf(data = conterminous_us,
+          color = "black",
+          fill = NA) +
+  stat_summary_hex(
+    data = map_data_siteSR, 
+    aes(x = proj_x, y = proj_y, z = avg_overpasses_per_yr),
+    fun = mean, 
+    alpha = 0.9
+  ) +
+  scale_fill_viridis_c(
+    name = "Avg Overpasses\nper Year"
+  ) +
+  xlab(NULL) +
+  ylab(NULL) +
+  theme_bw() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", margin = margin(b = 10))
+  ) +
+  labs(
+    title = "siteSR: Average Annual Landsat Observations per Site",
+    subtitle = "Hex values represent the mean of all sites within the hex"
+  )
+  
+siteSR_count_map
+
+ggsave(filename = "figs/siteSR_counts_map.pdf", plot = siteSR_count_map,
+       width = 7.5, height = 5.0, units = "in")
+
+# Clear up memory
+rm(site_data, full_siteSR, map_data, map_data_full, avg_overpasses_siteSR, siteSR_count_map, siteSR_paths)
+gc()
+```
+
+### lakeSR
+Exports to `figs/lakeSR_counts_map.pdf`.
+```{r}
+full_lakeSR <- build_sr(
+  which_sr = "lakeSR",
+  # Location of downloaded files
+  sr_location = "data",
+  algal_mask = FALSE,
+  # Export as Arrow Table in data/
+  save = TRUE, 
+  # Defaults to data/lakeSR_DSWE1_full_concatenation.feather
+  save_location = "data"
+)
+
+avg_overpasses_lakeSR <- full_lakeSR %>%
+  mutate(year = year(date)) %>%
+  group_by(lakeSR_id, year) %>%
+  summarize(annual_count = n(), .groups = "drop") %>%
+  group_by(lakeSR_id) %>%
+  summarize(avg_overpasses_per_yr = mean(annual_count), .groups = "drop") %>%
+  collect()
+
+# Read in site data
+lake_data <- read_csv("data/lakeSR_poi_with_flags_2025-02-12.csv")
+
+# Join aggregation to locations
+map_data_full_lakeSR <- avg_overpasses_lakeSR %>%
+  left_join(x = ., y = lake_data, by = "lakeSR_id") %>%
+  filter(!is.na(poi_Longitude),
+         !is.na(poi_Latitude)) %>%
+  st_as_sf(coords = c("poi_Longitude", "poi_Latitude"), crs = 4326) %>%
+  st_transform(crs = map_crs) 
 
 
+# Subset to conterminous US
+map_data_lakeSR <- map_data_full_lakeSR[conterminous_us, ] %>%
+  mutate(
+    proj_x = st_coordinates(geometry)[,1],
+    proj_y = st_coordinates(geometry)[,2]
+  ) %>%
+  # Drop the spatial geometry list-column so it works cleanly with stat_summary_hex
+  st_drop_geometry()
+
+lakeSR_count_map <- map_data_lakeSR %>%
+  ggplot() +
+  geom_sf(data = conterminous_us,
+          color = "black",
+          fill = NA) +
+  stat_summary_hex(
+    data = map_data_lakeSR, 
+    aes(x = proj_x, y = proj_y, z = avg_overpasses_per_yr),
+    fun = mean, 
+    alpha = 0.9
+  ) +
+  scale_fill_viridis_c(
+    name = "Avg Overpasses\nper Year"
+  ) +
+  xlab(NULL) +
+  ylab(NULL) +
+  theme_bw() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", margin = margin(b = 10))
+  ) +
+  labs(
+    title = "lakeSR: Average Annual Landsat Observations per POI",
+    subtitle = "Hex values represent the mean of all lakes within the hex"
+  )
+  
+lakeSR_count_map
+
+ggsave(filename = "figs/lakeSR_counts_map.pdf", plot = lakeSR_count_map,
+       width = 7.5, height = 5.0, units = "in")
+
+rm(lake_data, full_lakeSR, map_data_lakeSR, map_data_full_lakeSR, avg_overpasses_lakeSR, lakeSR_count_map, lakeSR_paths)
+gc()
+```
+
+### riverSR
+Exports to `figs/riverSR_counts_map.pdf`.
+
+```{r}
+riverSR <- read_feather(riverSR_paths)
+```
 
