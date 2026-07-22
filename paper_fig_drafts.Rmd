@@ -9,6 +9,9 @@ output:
 # Set global options to hide code from the final manuscript
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
+# Point to this before loading reticulate to avoid crash
+Sys.setenv(RETICULATE_PYTHON = "./.venv/bin/python")
+
 # Load reticulate and activate project-local Python environment
 library(reticulate)
 use_virtualenv("./.venv", required = TRUE)
@@ -166,7 +169,8 @@ library(scales)
 library(sf)
 library(sfheaders)
 library(patchwork)
-
+library(RColorBrewer)
+library(ggridges)
 
 # The main four parameters from the OG AquaSat
 main_params <- c("chla", "doc", "sdd", "tss")
@@ -603,7 +607,8 @@ river_data <- riverSR %>%
   group_by(ID, year) %>%
   summarize(annual_count = n(), .groups = "drop") %>%
   group_by(ID) %>%
-  summarize(avg_overpasses_per_yr = mean(annual_count), .groups = "drop")
+  summarize(avg_overpasses_per_yr = mean(annual_count), .groups = "drop") %>%
+  collect()
 
 # Modified nhdplus from Zenodo
 river_lines <- read_sf("data/nhdplusv2_modified_v1.0.shp")
@@ -698,6 +703,10 @@ ggsave("figs/combined_SR_counts_map.pdf", combined_maps,
 # PNG also for the purpose of including it in this Rmd
 ggsave("figs/combined_SR_counts_map.png", combined_maps, 
        width = 7.5, height = 12, units = "in")
+
+rm(riverSR, combined_maps, p_lake, p_lake_synced, p_river, p_river_synced,
+   p_site, p_site_synced)
+gc()
 ```
 ```{r}
 knitr::include_graphics("figs/combined_SR_counts_map.png")
@@ -833,15 +842,130 @@ ggsave(
 )
 
 rm(conterminous_matchups_sf, stacked_slim_collected, post_matchup_plot_data,
-   map_plot_matchups)
+   map_plot_matchups, stacked_data_arrow)
 gc()
 ```
 
 
+## 5. Raw color values for siteSR, uncorrected and corrected
 
+```{r}
+# Apply the Gardner polynomial correction relative to LS7
 
+# Quick conversion of .feather to .parquet for concatenated siteSR
+parquet_path <- "data/siteSR_DSWE1_full_concatenation.parquet"
 
+if (!file.exists(parquet_path)) {
+  data_to_convert <- read_feather(
+    "data/siteSR_DSWE1_full_concatenation.feather",
+    as_data_frame = FALSE
+  )
+  # Export as .parquet
+  write_parquet(
+    data_to_convert, 
+    parquet_path
+  )
+  
+  rm(data_to_convert)
+  gc()
+}
 
+# Now apply handoffs
+handoff_path <- apply_handoffs(
+  input_path = "data/siteSR_DSWE1_full_concatenation.parquet",
+  handoff_path = "data/lakeSR_collated_handoffs_GEEv2025-02-12_QAv2025-06-04.csv",
+  correction_method = "Gardner_poly",
+  sat_target = "LS7",
+  algal_mask = FALSE,
+  save_location = "data/siteSR_DSWE1_full_concatenation_corrected.parquet"
+)
+```
+
+**Note**: Plotting takes place here with a subsample because of the size of the
+dataset. Pivoting with the full dataset causes R to crash.
+```{r}
+# Open connection to the handoff adjusted file
+concat_handoffs <- open_dataset("data/siteSR_DSWE1_full_concatenation_corrected.parquet")
+
+# Reproducibility seed
+set.seed(351)
+
+# Extract, subsample, and pivot
+sr_ridge_data <- concat_handoffs %>%
+  # Select necessary subset of cols to avoid bloat
+  select(
+    mission,
+    Uncorrected_Blue = med_Blue, Corrected_Blue = blue_corr_7,
+    Uncorrected_Green = med_Green, Corrected_Green = green_corr_7,
+    Uncorrected_Red = med_Red, Corrected_Red = red_corr_7,
+    Uncorrected_Nir = med_Nir, Corrected_Nir = nir_corr_7,
+    Uncorrected_Swir1 = med_Swir1, Corrected_Swir1 = swir1_corr_7,
+    Uncorrected_Swir2 = med_Swir2, Corrected_Swir2 = swir2_corr_7
+  ) %>%
+  # Retrieve into memory
+  collect() %>%
+  # Keep 5% of rows because the dataset is large and pivoting is a memory heavy
+  # task
+  slice_sample(prop = 0.1) %>%
+  # Pivot for building figure
+  pivot_longer(
+    cols = -mission,
+    names_to = c("status", "band"),
+    names_sep = "_",
+    values_to = "reflectance"
+  ) %>%
+  # Filter out extreme outliers by band for plotting purposes
+ group_by(band) %>%
+  filter(
+    reflectance >= quantile(reflectance, 0.01, na.rm = TRUE),
+    reflectance <= quantile(reflectance, 0.99, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    status = factor(status, levels = c("Uncorrected", "Corrected")),
+    band = factor(band, levels = c("Blue", "Green", "Red", "Nir", "Swir1", "Swir2")),
+    # Ensure mission is a factor for the y-axis
+    mission = as.factor(mission) 
+  )
+
+calibration_ridge_plot_lines <- ggplot(
+  sr_ridge_data, aes(x = reflectance, y = mission, color = status)
+) +
+  geom_density_ridges(
+    fill = NA,                 
+    # Keeps missions from overlapping vertically
+    scale = 0.9,               
+    rel_min_height = 0.01,
+    linewidth = 0.8            
+  ) +
+  facet_wrap(vars(band), scales = "free_x", ncol = 3) +
+  scale_color_manual(
+    name = "Handoff Calibration Status",
+    values = c("Uncorrected" = "#E69F00", "Corrected" = "#56B4E9")
+  ) +
+  labs(
+    title = "Landsat Intermission Handoff Calibration (Target: LS7)",
+    subtitle = "Comparing raw vs. harmonized surface reflectance distributions\n(Distributions trimmed to the 1st and 99th percentiles for visual clarity)",
+    x = "Surface Reflectance",
+    y = "Landsat Mission"
+  ) +
+  theme_ridges(font_size = 12, grid = TRUE, center_axis_labels = TRUE) +
+  theme(
+    legend.position = "bottom",
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.background = element_rect(fill = "grey90", color = "black", linewidth = 0.5),
+    strip.text = element_text(face = "bold"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+# View plot
+calibration_ridge_plot_lines
+
+ggsave(filename = "figs/handoff_calibration_ridgelines.pdf",
+       plot = calibration_ridge_plot_lines, 
+       width = 10, height = 7, units = "in")
+```
 
 
 
