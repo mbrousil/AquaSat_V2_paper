@@ -18,7 +18,7 @@ use_virtualenv("./.venv", required = TRUE)
 
 ## 1. Workflow/Data Architecture Diagram
 
-Uses Python {diagrams} library. Exports to `figs/aquasat_ecosystem.png`.
+Uses Python {diagrams} library. Exports to `figs/aquasat_ecosystem.png` and `figs/aquasat_ecosystem.pdf`.
 
 ```{python, results = "hide"}
 from diagrams import Diagram, Cluster, Edge
@@ -39,7 +39,7 @@ with Diagram(
     filename="figs/aquasat_ecosystem", 
     show=False, 
     direction="LR",
-    outformat="pdf",
+    outformat=["png", "pdf"],
     graph_attr={"fontsize": "24"}
 ):
 
@@ -165,13 +165,25 @@ library(arrow)
 library(scales)
 library(sf)
 library(sfheaders)
+library(patchwork)
 
 
 # The main four parameters from the OG AquaSat
 main_params <- c("chla", "doc", "sdd", "tss")
 
-# Download the datasets to the R env
-param_data_list <- download_parameters(parameters = main_params)
+# Check to see if the files have been downloaded already before proceeding
+expected_feathers <- file.path(
+  "data", paste0(main_params, "_harmonized.feather")
+)
+
+if (all(file.exists(expected_feathers))) {
+  # Load existing data if they all exist
+  param_data_list <- map(expected_feathers, read_feather)
+  names(param_data_list) <- main_params
+} else {
+  # Download if any are missing
+  param_data_list <- download_parameters(parameters = main_params)
+}
 
 # CRS to use
 map_crs <- 9311
@@ -301,8 +313,7 @@ map_plot
 ggsave(filename = "figs/parameter_counts_map.pdf", plot = map_plot,
        width = 7.5, height = 5.0, units = "in")
 
-rm(conterminous_recs_sf, epsg_codes, non_conterminous_us,
-   stacked_sf_data, map_plot)
+rm(conterminous_recs_sf, stacked_sf_data, map_plot)
 gc()
 ```
 
@@ -345,12 +356,14 @@ ggsave(filename = "figs/parameter_distributions.pdf", plot = param_distribution_
        width = 7.5, height = 5.0, units = "in")
 
 # Now export the WQP data locally for matchups and to free up memory
-iwalk(
-  .x = param_data_list,
-  .f = \(data, name) write_feather(
-  x = data, 
-  sink = file.path("data", paste0(name, "_harmonized.feather"))
-))
+if (!all(file.exists(expected_feathers))){
+  iwalk(
+    .x = param_data_list,
+    .f = \(data, name) write_feather(
+      x = data, 
+      sink = file.path("data", paste0(name, "_harmonized.feather"))
+    ))
+}
 
 rm(param_data_list, stacked_param_data, param_distribution_plot)
 gc()
@@ -359,38 +372,71 @@ gc()
 
 ## 3. SR maps
 
-Download datasets:
+Download datasets if necessary:
 ```{r}
-siteSR_paths <- download_siteSR(
-  save_location = "data",
-  # DSWE1
-  algal_mask = FALSE,
-  ask = TRUE
-)
+# siteSR
+if (!file.exists("data/siteSR_DSWE1_full_concatenation.feather")) {
+  siteSR_paths <- download_siteSR(
+    save_location = "data",
+    # DSWE1
+    algal_mask = FALSE,
+    ask = FALSE
+  )
+}
 
-lakeSR_paths <- download_lakeSR(
-  save_location = "data",
-  # DSWE1
-  algal_mask = FALSE,
-  ask = TRUE
-)
+# lakeSR
+if (!file.exists("data/lakeSR_DSWE1_full_concatenation.feather")) {
+  lakeSR_paths <- download_lakeSR(
+    save_location = "data",
+    # DSWE1
+    algal_mask = FALSE,
+    ask = FALSE
+  )
+}
 
-riverSR_paths <- download_riverSR(save_location = "data")
+# riverSR
+if (!file.exists("data/riverSR_usa_v1.1.feather")) {
+  riverSR_paths <- download_riverSR(
+    save_location = "data",
+    timeout_length = 5000
+  )
+} else {
+  riverSR_paths <- "data/riverSR_usa_v1.1.feather"
+}
+
+# Download modified NHDplusV2 centerlines from riverSR (not currently implemented
+# in AquaMatchr)
+if (!file.exists("data/nhdplusv2_modified_v1.0.shp")) {
+  zen_rec <- zen4R::get_zenodo(doi = "10.5281/zenodo.4304567")
+  zen_files <- zen_rec$listFiles()$filename
+  shp_bundle <- grep(pattern = "^nhdplusv2_modified_v1\\.0\\.",
+                     x = zen_files,
+                     value = TRUE)
+  zen4R::download_zenodo(path = "data", doi = "10.5281/zenodo.4304567", 
+                         files = shp_bundle, timeout = 4000)
+}
 ```
 
 ### siteSR
-Work with siteSR first. Exports to `figs/siteSR_counts_map.pdf`.
+Work with siteSR first. Will save a temporary ggplot object at `data/siteSR_map_draft.rds`
 ```{r}
-full_siteSR <- build_sr(
-  which_sr = "siteSR",
-  # Location of downloaded files
-  sr_location = "data",
-  algal_mask = FALSE,
-  # Export as Arrow Table in data/
-  save = TRUE, 
-  # Defaults to data/siteSR_DSWE1_full_concatenation.feather
-  save_location = "data"
-)
+# Check if siteSR has been built before proceeding
+siteSR_concat_path <- "data/siteSR_DSWE1_full_concatenation.feather"
+
+if (file.exists(siteSR_concat_path)) {
+  full_siteSR <- arrow::open_dataset(siteSR_concat_path, format = "feather")
+} else {
+  full_siteSR <- build_sr(
+    which_sr = "siteSR",
+    # Location of downloaded files
+    sr_location = "data",
+    algal_mask = FALSE,
+    # Export as Arrow Table in data/
+    save = TRUE, 
+    # Defaults to data/siteSR_DSWE1_full_concatenation.feather
+    save_location = "data"
+  )
+}
 
 # Aggregate overpass counts
 avg_overpasses_siteSR <- full_siteSR %>%
@@ -419,46 +465,58 @@ map_data_siteSR <- map_data_full_siteSR[conterminous_us, ] %>%
   # Drop the spatial geometry list-column so it works cleanly with stat_summary_hex
   st_drop_geometry()
 
+# Bbox for map
+us_bbox <- st_bbox(conterminous_us)
+
 siteSR_count_map <- map_data_siteSR %>%
   ggplot() +
-  geom_sf(data = conterminous_us,
-          color = "black",
-          fill = NA) +
   stat_summary_hex(
     data = map_data_siteSR, 
     aes(x = proj_x, y = proj_y, z = avg_overpasses_per_yr),
     fun = mean, 
+    bins = 50,
     alpha = 0.9
   ) +
+  geom_sf(data = conterminous_us,
+          color = "black",
+          fill = NA) +
   scale_fill_viridis_c(
-    name = "Avg Overpasses\nper Year"
+    name = "Avg Annual Overpasses\nper Site"
   ) +
   xlab(NULL) +
   ylab(NULL) +
   theme_bw() +
   theme(
-    legend.position = "right",
     plot.title = element_text(face = "bold", margin = margin(b = 10))
   ) +
   labs(
     title = "siteSR: Average Annual Landsat Observations per Site",
     subtitle = "Hex values represent the mean of all sites within the hex"
+  ) + 
+  coord_sf(
+    xlim = c(us_bbox["xmin"], us_bbox["xmax"]),
+    ylim = c(us_bbox["ymin"], us_bbox["ymax"]),
+    expand = FALSE
   )
-  
-siteSR_count_map
 
-ggsave(filename = "figs/siteSR_counts_map.pdf", plot = siteSR_count_map,
-       width = 7.5, height = 5.0, units = "in")
+# Export the map contents for later use in a multi-panel figure
+write_rds(siteSR_count_map, "data/siteSR_map_draft.rds")
 
 # Clear up memory
-rm(site_data, full_siteSR, map_data, map_data_full, avg_overpasses_siteSR, siteSR_count_map, siteSR_paths)
+rm(site_data, full_siteSR, map_data_siteSR, map_data_full_siteSR, avg_overpasses_siteSR, siteSR_count_map, siteSR_paths)
 gc()
 ```
 
 ### lakeSR
-Exports to `figs/lakeSR_counts_map.pdf`.
+Will save a temporary ggplot object at `data/lakeSR_map_draft.rds`
 ```{r}
-full_lakeSR <- build_sr(
+# Check if lakeSR has been built before proceeding
+lakeSR_concat_path <- "data/lakeSR_DSWE1_full_concatenation.feather"
+
+if (file.exists(lakeSR_concat_path)) {
+  full_lakeSR <- arrow::open_dataset(lakeSR_concat_path, format = "feather")
+} else {
+  full_lakeSR <- build_sr(
   which_sr = "lakeSR",
   # Location of downloaded files
   sr_location = "data",
@@ -468,6 +526,7 @@ full_lakeSR <- build_sr(
   # Defaults to data/lakeSR_DSWE1_full_concatenation.feather
   save_location = "data"
 )
+}
 
 avg_overpasses_lakeSR <- full_lakeSR %>%
   mutate(year = year(date)) %>%
@@ -500,43 +559,289 @@ map_data_lakeSR <- map_data_full_lakeSR[conterminous_us, ] %>%
 
 lakeSR_count_map <- map_data_lakeSR %>%
   ggplot() +
-  geom_sf(data = conterminous_us,
-          color = "black",
-          fill = NA) +
   stat_summary_hex(
     data = map_data_lakeSR, 
     aes(x = proj_x, y = proj_y, z = avg_overpasses_per_yr),
     fun = mean, 
+    bins = 50,
     alpha = 0.9
   ) +
+  geom_sf(data = conterminous_us,
+          color = "black",
+          fill = NA) +
   scale_fill_viridis_c(
-    name = "Avg Overpasses\nper Year"
+    name = "Avg Annual Overpasses\nper Lake"
   ) +
   xlab(NULL) +
   ylab(NULL) +
   theme_bw() +
   theme(
-    legend.position = "right",
     plot.title = element_text(face = "bold", margin = margin(b = 10))
   ) +
   labs(
     title = "lakeSR: Average Annual Landsat Observations per POI",
     subtitle = "Hex values represent the mean of all lakes within the hex"
+  ) + 
+  coord_sf(
+    xlim = c(us_bbox["xmin"], us_bbox["xmax"]),
+    ylim = c(us_bbox["ymin"], us_bbox["ymax"]),
+    expand = FALSE
   )
-  
-lakeSR_count_map
 
-ggsave(filename = "figs/lakeSR_counts_map.pdf", plot = lakeSR_count_map,
-       width = 7.5, height = 5.0, units = "in")
+write_rds(lakeSR_count_map, "data/lakeSR_map_draft.rds")
 
 rm(lake_data, full_lakeSR, map_data_lakeSR, map_data_full_lakeSR, avg_overpasses_lakeSR, lakeSR_count_map, lakeSR_paths)
 gc()
 ```
 
 ### riverSR
-Exports to `figs/riverSR_counts_map.pdf`.
+Will save a temporary ggplot object at `data/riverSR_map_draft.rds`
+```{r, message=FALSE}
+riverSR <- read_feather(riverSR_paths)
+
+river_data <- riverSR %>%
+  group_by(ID, year) %>%
+  summarize(annual_count = n(), .groups = "drop") %>%
+  group_by(ID) %>%
+  summarize(avg_overpasses_per_yr = mean(annual_count), .groups = "drop")
+
+# Modified nhdplus from Zenodo
+river_lines <- read_sf("data/nhdplusv2_modified_v1.0.shp")
+
+map_data_riverSR <- river_lines %>%
+  # Join the aggregated reflectance data using the ID column
+  inner_join(river_data, by = "ID") %>%
+  # Extract Centroids
+  st_centroid() %>%
+  # Project the new points to match CRS
+  st_transform(crs = map_crs) %>%
+  # Extract the projected X and Y coordinates for the hex bins
+  mutate(
+    proj_x = st_coordinates(geometry)[,1],
+    proj_y = st_coordinates(geometry)[,2]
+  ) %>%
+  # Drop the spatial geometry list-column
+  st_drop_geometry()
+
+riverSR_count_map <- map_data_riverSR %>%
+  ggplot() +
+  # Map the hex bins using the newly extracted centroids
+  stat_summary_hex(
+    data = map_data_riverSR, 
+    aes(x = proj_x, y = proj_y, z = avg_overpasses_per_yr),
+    fun = mean, 
+    bins = 50, 
+    alpha = 0.9
+  ) +
+  geom_sf(data = conterminous_us,
+          color = "black",
+          fill = NA) +
+  scale_fill_viridis_c(
+    name = "Avg Annual\nOverpasses\nper Reach") +
+  xlab(NULL) +
+  ylab(NULL) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(face = "bold", margin = margin(b = 10))
+  ) +
+  labs(
+    title = "riverSR: Average Annual Landsat Observations per Reach",
+    subtitle = "Hex values represent the mean of all river reach centroids within the hex"
+  ) + 
+  coord_sf(
+    xlim = c(us_bbox["xmin"], us_bbox["xmax"]),
+    ylim = c(us_bbox["ymin"], us_bbox["ymax"]),
+    expand = FALSE
+  )
+
+write_rds(riverSR_count_map, "data/riverSR_map_draft.rds")
+
+rm(river_data, riverSR_paths, river_lines, map_data_riverSR, riverSR_count_map)
+gc()
+
+```
+
+Now, combine the three map figures into a single plot:
+```{r}
+# Reload the ggplot objects
+p_site  <- read_rds("data/siteSR_map_draft.rds")
+p_lake  <- read_rds("data/lakeSR_map_draft.rds")
+p_river <- read_rds("data/riverSR_map_draft.rds")
+
+# Find the maximum hex value across all three maps
+max_site  <- max(ggplot_build(p_site)$data[[1]]$value, na.rm = TRUE)
+max_lake  <- max(ggplot_build(p_lake)$data[[1]]$value, na.rm = TRUE)
+max_river <- max(ggplot_build(p_river)$data[[1]]$value, na.rm = TRUE)
+
+universal_max <- max(max_site, max_lake, max_river)
+
+# Create a unified color scale
+shared_scale <- scale_fill_viridis_c(
+  name = "Avg Annual\nOverpasses\nper Location\n(Site/Lake/Reach)",
+  limits = c(0, universal_max),
+  oob = scales::squish
+)
+
+# Overwrite imported scales
+p_site_synced  <- p_site + shared_scale
+p_lake_synced  <- p_lake + shared_scale
+p_river_synced <- p_river + shared_scale
+
+# Combine them (stacking them vertically using '/')
+combined_maps <- (p_site_synced / p_lake_synced / p_river_synced) +
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = 'A')
+
+# Save the unified figure
+ggsave("figs/combined_SR_counts_map.pdf", combined_maps, 
+       width = 7.5, height = 12, units = "in")
+# PNG also for the purpose of including it in this Rmd
+ggsave("figs/combined_SR_counts_map.png", combined_maps, 
+       width = 7.5, height = 12, units = "in")
+```
+```{r}
+knitr::include_graphics("figs/combined_SR_counts_map.png")
+```
+
+
+## 4. Matchup count comparisons
+
+Number of records in situ without matchups, number post matchups.
+
+First perform the matchups:
+```{r}
+# Chla
+chla_matchup_path <- "data/chla_siteSR_DSWE1_matchups.parquet"
+if (!file.exists(chla_matchup_path)) {
+chla_matchup_path <- match_siteSR_to_WQP(
+  wqp_path = "data/chla_harmonized.feather",
+  siteSR_path = "data/siteSR_DSWE1_full_concatenation.feather",
+  site_list_path = "data/siteSR_collated_WQP_NWIS_sites_with_NHD_info_2025-06-04.csv",
+  save_location = "data/chla_siteSR_DSWE1_matchups.parquet",
+  time_window = "7 days"
+)
+}
+
+# DOC
+doc_matchup_path <- "data/doc_siteSR_DSWE1_matchups.parquet"
+if (!file.exists(doc_matchup_path)) {
+doc_matchup_path <- match_siteSR_to_WQP(
+  wqp_path = "data/doc_harmonized.feather",
+  siteSR_path = "data/siteSR_DSWE1_full_concatenation.feather",
+  site_list_path = "data/siteSR_collated_WQP_NWIS_sites_with_NHD_info_2025-06-04.csv",
+  save_location = "data/doc_siteSR_DSWE1_matchups.parquet",
+  time_window = "7 days"
+)
+}
+
+# SDD
+sdd_matchup_path <- "data/sdd_siteSR_DSWE1_matchups.parquet"
+if (!file.exists(sdd_matchup_path)) {
+sdd_matchup_path <- match_siteSR_to_WQP(
+  wqp_path = "data/sdd_harmonized.feather",
+  siteSR_path = "data/siteSR_DSWE1_full_concatenation.feather",
+  site_list_path = "data/siteSR_collated_WQP_NWIS_sites_with_NHD_info_2025-06-04.csv",
+  save_location = "data/sdd_siteSR_DSWE1_matchups.parquet",
+  time_window = "7 days"
+)
+}
+
+# TSS
+tss_matchup_path <- "data/tss_siteSR_DSWE1_matchups.parquet"
+if (!file.exists(tss_matchup_path)) {
+  tss_matchup_path <- match_siteSR_to_WQP(
+    wqp_path = "data/tss_harmonized.feather",
+    siteSR_path = "data/siteSR_DSWE1_full_concatenation.feather",
+    site_list_path = "data/siteSR_collated_WQP_NWIS_sites_with_NHD_info_2025-06-04.csv",
+    save_location = "data/tss_siteSR_DSWE1_matchups.parquet",
+    time_window = "7 days"
+  )
+}
+```
+
+Mapping is one option for this type of figure. It seemed most in line with the original AquaSat ms so that's what I've provided here. Exports to `figs/parameter_counts_map_post_matchup.pdf`.
 
 ```{r}
-riverSR <- read_feather(riverSR_paths)
+matchup_files <- c(
+ chla_matchup_path, doc_matchup_path, sdd_matchup_path, tss_matchup_path
+)
+
+# Open all four matchup datasets as a stacked df, don't collect yet
+stacked_data_arrow <- open_dataset(matchup_files)
+
+stacked_slim_collected <- stacked_data_arrow %>% 
+  select(parameter, lat, lon, datum) %>%
+  collect() %>%
+  mutate(
+    main_param = case_when(
+      parameter == "ssc" | parameter == "tss" ~ "TSS",
+      parameter == "chlorophyll" ~ "Chla",
+      parameter == "sdd" ~ "SDD",
+      parameter == "doc" ~ "DOC"
+    )
+  )
+
+post_matchup_plot_data <- stacked_slim_collected %>%
+  # Treat NA datum as WGS84
+  mutate(datum = replace_na(datum, "WGS84")) %>%
+  left_join(
+    x = .,
+    y = epsg_codes,
+    by = "datum"
+  ) %>%
+  # Group by CRS 
+  split(f = .$epsg) %>%
+  # Transform and re-stack
+  map_df(.x = .,
+         .f = ~ .x %>%
+           st_as_sf(coords = c("lon", "lat"),
+                    crs = unique(.x$epsg)) %>%
+           st_make_valid() %>%
+           st_transform(crs = map_crs))
+
+conterminous_matchups_sf <- post_matchup_plot_data[conterminous_us, ]
+
+map_plot_matchups <- sf_to_df(conterminous_matchups_sf, fill = TRUE) %>%
+  ggplot() +
+  geom_hex(aes(x = x, y = y),
+           bins = 50) +
+  geom_sf(data = conterminous_us,
+          color = "black",
+          fill = NA) +
+  scale_fill_viridis_c("Record count",
+                       trans = "log",
+                       breaks = breaks_log(n = 6),
+                       labels = label_number(scale_cut = cut_short_scale())
+  ) +
+  xlab(NULL) +
+  ylab(NULL) +
+  facet_wrap(vars(main_param)) +
+  guides(x = guide_axis(check.overlap = TRUE),
+         y = guide_axis(check.overlap = TRUE)) +
+  ggtitle(label = "Matchup counts across the US by parameter") +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_colorbar(barwidth = 10))
+
+# Return to view
+map_plot_matchups
+
+# Export as .pdf
+ggsave(
+  filename = "figs/parameter_counts_map_post_matchup.pdf",
+  plot = map_plot_matchups, width = 7.5, height = 5.0, units = "in"
+)
+
+rm(conterminous_matchups_sf, stacked_slim_collected, post_matchup_plot_data,
+   map_plot_matchups)
+gc()
 ```
+
+
+
+
+
+
+
+
 
