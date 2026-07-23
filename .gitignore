@@ -47,3 +47,27 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+.DS_Store
+
+# Data files
+/data/**/*.csv
+/data/**/*.feather
+/data/**/*.arrow
+/data/**/*.parquet
+/data/**/*.rds
+# Shapefiles
+/data/**/*.shp
+/data/**/*.shx
+/data/**/*.dbf
+/data/**/*.prj
+/data/**/*.sbn
+/data/**/*.sbx
+/data/**/*.cpg
+/data/**/*.fbn
+/data/**/*.fbx
+/data/**/*.ain
+/data/**/*.aih
+/data/**/*.ixs
+/data/**/*.mxs
+/data/**/*.atx
+/data/**/*.shp.xml
